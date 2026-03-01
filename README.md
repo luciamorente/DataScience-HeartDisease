@@ -28,6 +28,10 @@ The analysis includes:
 - Logistic regression and PCA models show strong predictive performance (AUC ≈ 0.87).  
 - K-Means clustering reveals distinct patient profiles and risk patterns.
 
-## Authors
-- **Teresa Conde Germán-Coley**  
-- **Lucía Morente Navas**
+## Installation
+To run this project locally, you need **R** and **RStudio**.
+
+1. **Clone the repository:**
+```bash
+git clone https://github.com/your-username/DataScience-HeartDisease.git
+cd DataScience-HeartDisease
