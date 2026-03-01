@@ -1,0 +1,923 @@
+---
+title: "Trabajo Data Science"
+author: "Teresa Conde Germán-Coley & Lucía Morente Navas"
+date: "`r Sys.Date()`"
+output: 
+  html_document:
+    toc: true
+    toc_float: 
+      collapsed: false
+      smooth_scroll: true
+    theme: journal
+    highlight: textmate
+    css: estilo.css
+fontsize: 11pt
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Análisis de Factores Clínicos Asociados a Enfermedad Cardíaca
+
+## Introducción
+
+Las enfermedades cardiovasculares representan una de las principales causas de mortalidad a nivel mundial, siendo responsables de millones de muertes cada año. Entre ellas, las enfermedades cardíacas, que incluyen condiciones como la cardiopatía coronaria y la insuficiencia cardíaca, tienen un impacto significativo en la salud pública debido a su alta prevalencia, complejidad clínica y potencial de complicaciones graves.
+
+El diagnóstico temprano y la identificación de factores de riesgo asociados a la enfermedad cardíaca son esenciales para mejorar la prevención, el tratamiento y la calidad de vida de los pacientes. El análisis de datos clínicos mediante técnicas estadísticas y de aprendizaje automático permite explorar relaciones entre variables clínicas y resultados de salud, facilitando así la identificación de factores predictivos y patrones relevantes que podrían no ser evidentes a simple vista.
+
+En este estudio se realiza un análisis exploratorio de un conjunto de datos clínicos de pacientes con sospecha de enfermedad cardíaca. Se examinan distintas variables con el objetivo de determinar cuáles están asociadas con la presencia de enfermedad cardíaca y cómo se pueden utilizar para predecir su aparición de manera efectiva.
+
+## Explicación del set de datos
+
+El conjunto de datos utilizado corresponde a una base de datos sobre enfermedades cardíacas que originalmente contiene 76 variables. Sin embargo, los estudios publicados emplean únicamente un subconjunto de 14 atributos seleccionados por su relevancia diagnóstica.
+
+Entre las distintas bases de datos disponibles, la base de datos de Cleveland es la más utilizada en investigaciones de aprendizaje automático orientadas a la predicción de enfermedades cardíacas.
+
+### Variables del conjunto de datos
+
+La variable objetivo, en nuestro caso diagnosis, indica la presencia o ausencia de enfermedad cardíaca en el paciente, representada mediante un valor entero de 0 a 4, donde:
+
+-   0: no hay presencia de enfermedad cardíaca.
+
+-   1–4: distintos grados de presencia de la enfermedad.
+
+En la mayoría de los experimentos realizados con esta base de datos, se simplifica el problema a una clasificación binaria, distinguiendo entre presencia (1–4) y ausencia (0) de enfermedad cardíaca.
+
+Resumimos a continuación las demás variables que conforman el dataset con el que vamos a trabajar:
+
+1.  **age**: Edad del paciente en años.
+
+2.  **sex**: Sexo del paciente (1 = masculino, 0 = femenino).
+
+3.  **chest_pain_type**: Tipo de dolor torácico experimentado:
+
+    -   1 = típico angina
+
+    -   2 = angina atípica
+
+    -   3 = dolor no anginoso
+
+    -   4 = asintomático
+
+4.  **resting_blood_pressure**: Presión arterial en reposo (mm Hg).
+
+5.  **cholesterol**: Colesterol sérico total (mg/dl).
+
+6.  **fasting_blood_sugar**: Azúcar en sangre en ayunas \> 120 mg/dl (1 = verdadero, 0 = falso).
+
+7.  **resting_ecg_results**: Resultados del electrocardiograma en reposo:
+
+    -   0 = normal
+
+    -   1 = con anomalías de onda ST-T
+
+    -   2 = hipertrofia ventricular probable o definitiva
+
+8.  **max_heart_rate**: Frecuencia cardíaca máxima alcanzada durante el ejercicio.
+
+9.  **ex_angina**: Angina inducida por ejercicio (1 = sí, 0 = no).
+
+10. **oldpeak**: Depresión del ST inducida por el ejercicio en comparación con el reposo (valor de estrés).
+
+11. **slope**: Pendiente del segmento ST durante el ejercicio:
+
+    -   1 = ascendente
+
+    -   2 = plano
+
+    -   3 = descendente
+
+12. **major_vessels**: Número de vasos principales (0–3) coloreados por fluoroscopia.
+
+13. **thal**: Anormalidades en el tálamo:
+
+    -   3 = normal
+
+    -   6 = defecto fijo
+
+    -   7 = defecto reversible
+
+## Preparación de los datos
+
+### Carga de librerías
+
+```{r librerias, echo=TRUE, message=FALSE, warning=FALSE}
+
+library(dplyr)
+library(knitr)
+library(kableExtra)
+library(corrplot)
+library(ggplot2)
+library(broom)
+library(DescTools)
+library(rcompanion)
+library(scales)
+library(pROC)
+library(ggeffects)
+library(tidyr)
+library(pscl)
+library(ggfortify)
+library(viridis)
+library(cluster)
+```
+
+### Carga y limpieza del set de datos
+
+En primer lugar, se procede a cargar el conjunto de datos mediante la lectura del archivo 'heart_disease_db.csv', utilizando como separador el carácter ";".
+
+```{r cargar-dataset}
+
+dataset <- read.csv("heart_disease_db.csv", header = TRUE, sep = ";", stringsAsFactors = FALSE)
+```
+
+```{r mostrar-dataset, echo=FALSE, message=FALSE, warning=FALSE}
+
+# Mostrar dataframe
+dataset %>%
+  head(5) %>%
+  kable(caption = "Muestra de las primeras 5 observaciones") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"),
+                full_width = FALSE, 
+                position = "center") %>%
+  row_spec(0, bold = TRUE, color = "white", background = "#800020")
+```
+
+```{r cols, echo=FALSE, message=FALSE, warning=FALSE, results='hide'}
+
+# Visualizar nombres de columnas y estructura
+colnames(dataset)
+str(dataset)
+```
+
+El objetivo inicial es examinar la estructura y el tipo de variables del dataset para adecuarlo a un formato que permita realizar los análisis posteriores. Para ello, se inspeccionan las columnas que no son numéricas. Dado que algunas columnas se encuentran en formato carácter, se lleva a cabo una conversión a formato numérico, con el fin de aplicar correctamente las técnicas estadísticas y de modelado.
+
+```{r nonumeric, echo=FALSE, message=FALSE, warning=FALSE, results='hide'}
+
+dataset %>%
+select(where(~ !is.numeric(.))) %>%
+glimpse()
+
+dataset <- dataset %>%
+mutate(across(where(is.character), as.numeric))
+```
+
+Posteriormente, se identifican los valores ausentes (`NA`) presentes en el dataset. Se observa que las variables `slope`, `major_vessels` y `thal` presentan una alta proporción de valores faltantes, en concreto 309, 611 y 486, respectivamente. Dado que estas variables no se consideran determinantes para el objetivo del estudio, se decide excluirlas del análisis. Tras esto, se realiza una verificación adicional y se eliminan las observaciones incompletas restantes para garantizar un dataset limpio.
+
+```{r limpieza-NA, echo=TRUE, message=FALSE, warning=FALSE, results='hide' }
+
+# Comprobar valores NA
+colSums(is.na(dataset))
+
+# Eliminar columnas con muchos valores nulos
+dataset <- dataset %>%
+select(-major_vessels, -thal, -slope)
+
+# Eliminar filas con NA restantes
+dataset <- na.omit(dataset)
+colSums(is.na(dataset)) # comprobar que ya no hay NA
+```
+
+A continuación, observando los datos, se identifican valores de 0 en la columna de colesterol, por lo que eliminamos esas filas
+
+```{r colesterol, echo=TRUE, message=FALSE, warning=FALSE, results='hide'}
+
+dataset <- dataset %>%
+  filter(cholesterol != 0)
+nrow(dataset)
+```
+
+Finalmente, se transforma la variable `diagnosis` en binaria:
+
+-   `0`: sin enfermedad cardíaca
+
+-   `1`: con enfermedad cardíaca (cualquier valor de 1 a 4)
+
+```{r diagnosis-binaria, echo=TRUE, results='hide'}
+
+dataset$diagnosis <- ifelse(dataset$diagnosis == 0, 0, 1)
+table(dataset$diagnosis)
+```
+
+Podemos observar que los datos están balanceados, con 347 pacientes sin enfermedad (diagnosis = 0) y 314 pacientes con enfermedad (diagnosis = 1). Esto es importante para los análisis posteriores y para la construcción de modelos de predicción, ya que un dataset balanceado evita sesgos hacia la clase mayoritaria.
+
+```{r datosbalanceados, echo=FALSE, message=FALSE, warning=FALSE}
+
+# Crear tabla de conteo
+diagnosis_table <- dataset %>%
+  group_by(diagnosis) %>%
+  summarise(Conteo = n()) %>%
+  mutate(Proporcion = round(Conteo / sum(Conteo) * 100, 1))
+
+# Mostrar tabla con formato profesional
+diagnosis_table %>%
+  kable(caption = "Distribución de la variable diagnosis (balance de clases)",
+        col.names = c("Diagnóstico", "Número de pacientes", "Proporción (%)")) %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"),
+                full_width = FALSE,
+                position = "center") %>%
+  row_spec(0, bold = TRUE, color = "white", background = "#800020")  # burdeos
+```
+
+Finalmente, tras la limpieza de datos y eliminación de valores no válidos o faltantes, nos quedamos con un dataset consistente compuesto por 661 filas y 11 variables. Se visualizan las primeras observaciones del dataset ya completamente filtrado:
+
+```{r df-final, echo=FALSE, message=FALSE, warning=FALSE}
+
+dataset %>%
+  head(5) %>%
+  kable(caption = "Muestra de las primeras 5 observaciones") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"),
+                full_width = FALSE, 
+                position = "center") %>%
+  row_spec(0, bold = TRUE, color = "white", background = "#800020")
+```
+
+```{r variablesfinales, echo=FALSE}
+
+num_vars <- c("age", "sex", "chest_pain_type", "resting_blood_pressure",
+"cholesterol", "fasting_blood_sugar", "resting_ecg_results",
+"max_heart_rate", "ex_angina", "oldpeak")
+```
+
+## Visualización de datos
+
+Antes de realizar los contrastes de hipótesis y los modelos predictivos, se llevó a cabo un análisis visual de las variables numéricas del conjunto de datos con el fin de identificar su distribución general y posibles valores atípicos.
+
+En la siguiente figura se representa, mediante boxplots, la dispersión de variables como la edad, el colesterol, la frecuencia cardíaca máxima, la depresión del ST (oldpeak) y la presión arterial en reposo.
+
+Se observa que algunas variables, como el colesterol y la presión arterial en reposo, presentan varios valores extremos, mientras que la frecuencia cardíaca máxima y oldpeak muestran una distribución más concentrada. Estos resultados son útiles para detectar posibles valores anómalos y comprender la escala y variabilidad de los datos antes de aplicar pruebas estadísticas o modelos más complejos.
+
+```{r boxplpot, echo=FALSE}
+
+#Chequeo de distribución y outliers. Chequeo de la presencia de outliers numéricos
+num_vars_2 <- c("age", "resting_blood_pressure", "cholesterol", 
+              "max_heart_rate", "oldpeak")
+
+dataset_long <- dataset %>%
+  select(all_of(num_vars_2)) %>%
+  pivot_longer(everything(), names_to = "Variable", values_to = "Valor")
+
+ggplot(dataset_long, aes(x = Variable, y = Valor, fill = Variable)) +
+geom_boxplot(alpha = 0.7, outlier.colour = "red", show.legend = FALSE) +
+theme_minimal(base_size = 13) +
+labs(title = "Distribución y posibles outliers por variable numérica")
+```
+
+Este segundo gráfico muestra cómo varía la frecuencia cardíaca máxima según la presencia o ausencia de enfermedad cardíaca, teniendo en cuenta distintos rangos de edad. Para ello, las edades de los pacientes se agruparon en intervalos: 25–40, 40–50, 50–60, 60–70 y 70–80 años. Esta agrupación permite observar de manera más clara cómo se distribuyen los valores dentro de cada grupo y facilita la comparación entre pacientes con y sin enfermedad cardíaca.
+
+```{r frecporedad, echo=FALSE}
+
+dataset_edades <- dataset %>%
+mutate(age_group = cut(age, breaks = c(25, 40, 50, 60, 70, 80),
+labels = c("25–40", "40–50", "50–60", "60–70", "70–80")))
+
+ggplot(dataset_edades, aes(x = age_group, y = max_heart_rate, fill = factor(diagnosis))) +
+geom_boxplot(alpha = 0.7) +
+scale_fill_manual(values = c("#00BFC4", "#F8766D"),
+labels = c("Sin enfermedad", "Con enfermedad")) +
+labs(x = "Rango de edad", y = "Frecuencia cardíaca máxima",
+fill = "Diagnóstico",
+title = "Frecuencia cardíaca máxima por rango de edad y diagnóstico") +
+theme_minimal(base_size = 12)
+```
+
+Se observa una tendencia descendente de la frecuencia cardíaca máxima conforme aumenta la edad, tanto en pacientes con como sin enfermedad cardíaca, lo cual concuerda con el comportamiento fisiológico esperado. Además, dentro de cada rango de edad, los pacientes con diagnóstico positivo alcanzan valores de frecuencia cardíaca máxima notablemente inferiores a los de los pacientes sin enfermedad.
+
+Este patrón sugiere que la frecuencia cardíaca máxima alcanzada durante el esfuerzo podría actuar como un indicador funcional del estado cardíaco, ya que una menor capacidad para aumentar la frecuencia con la edad se asocia con mayor probabilidad de enfermedad.
+
+## Hipótesis 1
+
+Esta hipótesis busca analizar si el rendimiento cardíaco durante el ejercicio (medido por la frecuencia máxima alcanzada) y la presencia de angina inducida están relacionados con la probabilidad de padecer enfermedad cardíaca. Además, se evalúa si existe interacción entre ambas variables, es decir, si el efecto de la frecuencia cardíaca máxima sobre el diagnóstico varía en función de la presencia de angina.
+
+```{r shapiro}
+
+shapiro_results <- lapply(dataset[num_vars], shapiro.test)
+```
+
+En primer lugar, se evaluó la normalidad de las variables numéricas mediante la prueba de Shapiro–Wilk . Todos los p-valores resultaron significativos ( p \< 0.05 ), lo que llevó a rechazar la hipótesis nula de normalidad. Esto indica que las variables cuantitativas no siguen una distribución normal. Por tanto, en los contrastes posteriores se utilizarán métodos no paramétricos (Kruskal–Wallis) y modelos logísticos en lugar de pruebas paramétricas (como ANOVA o t-test).
+
+```{r distribucion-max_heart_rate, echo=FALSE}
+
+#Distribución max_heart_rate
+ggplot(dataset, aes(x = max_heart_rate, fill = factor(diagnosis))) +
+geom_density(alpha = 0.6, color = "white") +
+scale_fill_manual(values = c("#00BFC4", "#F8766D"),
+labels = c("Sin enfermedad", "Con enfermedad")) +
+labs(x = "Frecuencia cardíaca máxima",
+y = "Densidad",
+title = "Distribución de la frecuencia cardíaca máxima según diagnóstico",
+fill = "Diagnóstico") +
+theme_minimal(base_size = 13) +
+theme(legend.position = "top",
+plot.title = element_text(face = "bold"))
+```
+
+```{r distribucion-oldpeak, echo=FALSE}
+
+#Distribución de oldpeak
+ggplot(dataset, aes(x = oldpeak, fill = factor(diagnosis))) +
+geom_density(alpha = 0.6, color = "white") +
+scale_fill_manual(values = c("#00BFC4", "#F8766D"),
+labels = c("Sin enfermedad", "Con enfermedad")) +
+labs(x = "Oldpeak",
+y = "Densidad",
+title = "Distribución de oldpeak según diagnóstico",
+fill = "Diagnóstico") +
+theme_minimal(base_size = 13) +
+theme(legend.position = "top",
+plot.title = element_text(face = "bold"))
+```
+
+En la primera figura se muestra la distribución de la frecuencia cardíaca máxima alcanzada según el diagnóstico de enfermedad cardíaca. Se observa que los pacientes sin enfermedad tienden a alcanzar mayores valores de frecuencia cardíaca máxima (curva desplazada hacia la derecha), mientras que los pacientes con enfermedad cardíaca presentan valores más bajos.
+
+La forma asimétrica de las curvas y la presencia de colas largas confirman que la variable no sigue una distribución normal , lo que respalda el uso de pruebas no paramétricas en los análisis posteriores.
+
+En la Figura 2 se representa la distribución de oldpeak, que mide la depresión del segmento ST tras el ejercicio. La gran concentración de valores cercanos a cero y la dispersión irregular de los valores altos indican una distribución altamente sesgada a la derecha. Este comportamiento refuerza que la variable tampoco sigue una distribución normal, y que su efecto sobre el diagnóstico podría no ser lineal.
+
+En conjunto, ambas visualizaciones permiten corroborar los resultados del test de Shapiro–Wilk, justificando el uso de métodos no paramétricos y modelos logísticos para contrastar las hipótesis planteadas.
+
+Para explorar las relaciones entre las variables numéricas, se construyó una matriz de correlación de Spearman (Figura X). En ella se observa una correlación destacable entre el tipo de dolor torácico (chest_pain_type) y la presencia de angina inducida (ex_angina), lo que sugiere que ambas variables podrían reflejar un mismo proceso clínico. Por este motivo, se analizó específicamente la relación entre ambas mediante una prueba de Chi-cuadrado.
+
+```{r cor-matrix}
+
+cor_matrix <- cor(dataset[num_vars], method = "spearman")
+corrplot(cor_matrix, method = "color", tl.col = "black", tl.cex = 0.5, addCoef.col = "black", title = "Matriz de correlación")
+```
+
+Para explorar la relación entre el tipo de dolor torácico y la presencia de angina inducida por ejercicio , se construyó una tabla de contingencia 4×2 y se aplicó la prueba de Chi-cuadrado de independencia.
+
+```{r chi-cramer}
+
+table_cp_angina <- table(dataset$chest_pain_type, dataset$ex_angina)
+chisq.test(table_cp_angina)
+
+CramerV(table_cp_angina)
+```
+
+El resultado fue significativo ( p \< 0.05 ), lo que llevó a rechazar la hipótesis nula : existe asociación entre ambas variables.
+
+El valor del V de Cramer fue 0.49 , lo que indica una asociación moderadamente fuerte (a partir de 0.3 se considera fuerte).
+
+Aunque el tipo de dolor torácico y la angina inducida hacen referencia a síntomas cardíacos, no miden el mismo fenómeno: el primero se basa en la descripción subjetiva del paciente, mientras que la segunda se determina objetivamente durante una prueba de esfuerzo.
+
+Los resultados muestran una relación significativa entre ambas variables , lo que sugiere que reflejan un mismo proceso clínico y pueden aportar información parcialmente redundante en el análisis.
+
+```{r chest-angina, echo=FALSE}
+
+ggplot(dataset, aes(x = factor(chest_pain_type), fill = factor(ex_angina))) +
+  geom_bar(position = "fill", color = "white", alpha = 0.9) +
+  scale_fill_manual(
+    values = c("#00BFC4", "#F8766D"),
+    labels = c("Sin angina inducida", "Con angina inducida")
+  ) +
+  scale_y_continuous(labels = percent_format()) +
+  labs(
+    x = "Tipo de dolor torácico",
+    y = "Proporción (%)",
+    fill = "Angina inducida",
+    title = "Distribución de la angina inducida según el tipo de dolor torácico"
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(
+    legend.position = "top",
+    plot.title = element_text(face = "bold", size = 12, hjust = 0.5)
+  )
+```
+
+Dado que la variable max_heart_rate no sigue una distribución normal, se aplicó una prueba de Kruskal–Wallis para comparar su distribución entre los grupos definidos por diagnóstico y angina inducida . El resultado fue significativo ( p \< 0.05 ), indicando que la distribución de la frecuencia cardíaca máxima difiere entre los grupos. Los pacientes con enfermedad cardíaca y angina inducida tienden a presentar valores más bajos de max_heart_rate.
+
+```{r kruskal}
+
+dataset2 <- dataset %>%
+  mutate(ex_angina_label = ifelse(ex_angina == 1, "Sí", "No"))
+
+# Comparación estadística: Kruskal-Wallis 
+kruskal.test(max_heart_rate ~ interaction(diagnosis, ex_angina_label), data = dataset2) 
+```
+
+```{r boxplotangina, echo=FALSE}
+
+# la distribución de max_heart_rate  SÍ difiere significativamente entre los 
+# grupos de diagnosis.
+
+ggplot(dataset2, aes(x = factor(diagnosis), y = max_heart_rate, fill = factor(diagnosis))) +
+  geom_boxplot(alpha = 0.7) +
+  facet_wrap(~ ex_angina) +
+  scale_fill_manual(values = c("#00BFC4", "#F8766D"),
+                    labels = c("Sin enfermedad", "Con enfermedad")) +
+  labs(x = "Diagnóstico", y = "Frecuencia cardíaca máxima",
+       fill = "Diagnóstico",
+       title = "Frecuencia cardíaca máxima según diagnóstico y angina inducida") +
+  theme_minimal(base_size = 10)
+```
+
+Para analizar simultáneamente el efecto de la frecuencia cardíaca máxima y la angina inducida (ajustando por edad y sexo), se ajustó un modelo de regresión logística binaria.
+
+El término de interacción ( max_heart_rate × ex_angina ) permite evaluar si la relación entre la frecuencia cardíaca máxima y el diagnóstico varía en función de la angina.
+
+Al examinar los resultados, la interacción no resultó significativa, por lo que el efecto de max_heart_rate es similar, independientemente de la presencia de angina.
+
+Se ajustó un modelo simplificado sin interacción, que mostró una capacidad predictiva muy similar (AUC ≈ igual), confirmando que la interacción no aporta mejora significativa.
+
+```{r reglogistica-interaccion, message=FALSE, warning=FALSE}
+
+logit_model <- glm(diagnosis ~ max_heart_rate*ex_angina + age + sex, data = dataset, family = binomial)
+
+summary(logit_model)
+exp(coef(logit_model))
+preds <- ggpredict(logit_model, terms = c("max_heart_rate", "ex_angina"))
+preds_df <- as.data.frame(preds)
+
+```
+
+```{r reg-grafica, echo=FALSE}
+
+ggplot(preds_df, aes(x = x, y = predicted, color = group)) +
+geom_line(size = 1.3) +
+scale_color_manual(
+values = c("#F8766D", "#00BFC4"),
+labels = c("Sin angina inducida", "Con angina inducida")
+) +
+labs(
+x = "Frecuencia cardíaca máxima (lpm)",
+y = "Probabilidad predicha de diagnóstico positivo",
+color = "Angina inducida",
+title = "Efecto de frecuencia cardíaca máxima y la angina inducida sobre diagnóstico"
+) +
+theme_minimal(base_size = 12) +
+theme(
+legend.position = "top",
+legend.title = element_text(size = 12, face = "bold"),
+legend.text = element_text(size = 10),
+plot.title = element_text(face = "bold", size = 11, hjust = 0.5),
+panel.grid.minor = element_blank()
+)
+```
+
+La capacidad discriminativa del modelo se evaluó mediante la curva ROC y el área bajo la curva (AUC). El AUC obtenido fue aproximadamente 0.8, lo que indica una buena capacidad de clasificación del diagnóstico a partir de las variables incluidas.
+
+La inclusión del término de interacción entre la frecuencia cardíaca máxima y la angina inducida se planteó para evaluar si el efecto de la primera sobre el diagnóstico variaba según la presencia de angina. Desde un punto de vista clínico, podría esperarse que una frecuencia cardíaca baja resultara más preocupante en pacientes con angina inducida.
+
+Sin embargo, los resultados mostraron que dicha interacción no es significativa y que el valor de AUC se mantiene inalterado (≈0.80), lo que indica que ambas variables contribuyen al diagnóstico de forma independiente. Por tanto, se optó por el modelo más simple, sin interacción.
+
+```{r mod-nointeraccion}
+
+
+logit_model_simple <- glm(diagnosis ~ max_heart_rate + ex_angina + age + sex,
+                          data = dataset, family = binomial)
+
+```
+
+```{r ROC, message=FALSE, warning=FALSE}
+
+roc_interaccion <- roc(dataset$diagnosis, fitted(logit_model))
+roc_simple <- roc(dataset$diagnosis, fitted(logit_model_simple))
+
+```
+
+```{r plotmodelos, echo=FALSE}
+
+# Plot conjunto
+plot(roc_simple, col = "#00BFC4", lwd = 2.5,
+     main = "Comparación de modelos logísticos (con y sin interacción)",
+     cex.main = 1.2, legacy.axes = TRUE)
+plot(roc_interaccion, col = "#F8766D", lwd = 2.5, add = TRUE)
+abline(a = 0, b = 1, lty = 2, col = "grey60")
+
+legend("bottomright",
+       legend = c(
+         paste0("Modelo sin interacción (AUC = ", round(auc(roc_simple), 3), ")"),
+         paste0("Modelo con interacción (AUC = ", round(auc(roc_interaccion), 3), ")")
+       ),
+       col = c("#00BFC4", "#F8766D"),
+       lwd = 2.5,
+       bty = "n")
+```
+
+```{r plot, echo=FALSE}
+
+ggplot(dataset, aes(x = factor(chest_pain_type), fill = factor(diagnosis))) +
+geom_bar(position = "dodge") +
+labs(x = "Tipo de dolor torácico", y = "Número de pacientes",
+fill = "Diagnóstico") +
+theme_minimal()
+```
+
+```{r plot2, echo=FALSE}
+
+ggplot(dataset, aes(x = factor(ex_angina), fill = factor(diagnosis))) +
+geom_bar(position = "dodge") +
+labs(x = "Tipo de angina", y = "Número de pacientes",
+fill = "Diagnóstico") +
+theme_minimal()
+```
+
+## Hipótesis 2: Identificación de los factores clínicos más relevantes
+
+El objetivo de esta hipótesis es identificar qué factores clínicos presentan diferencias significativas entre pacientes con y sin enfermedad cardíaca.
+
+Para ello, se aplican diferentes pruebas estadísticas, elegidas según el tipo de variable y la falta de normalidad observada en la Hipótesis 1.
+
+Todas las pruebas muestran un p-valor \< 0.05, lo que indica que las variables analizadas presentan diferencias estadísticamente significativas entre los grupos de diagnóstico.
+
+### 1. Comparación de variables numéricas: *max_heart_rate* y *oldpeak*
+
+Se realiza el primer análisis sobre estas variables, ya que reflejan el rendimiento cardiaco durante el esfuerzo. Como anteriormente hemos explicado, Max_heart_rate es la frecuencia cardíaca máxima alcanzada y oldpleak es la depresión del segmento ST, un indicador clásico de isquemia.
+
+Ya que ninguna sigue una distribución normal (según Shapiro–Wilk en H1), se utiliza la prueba no paramétrica de Wilcoxon, que compara las medianas entre dos grupos independientes.
+
+```{r wilcoxon_max_heart_rate}
+
+wilcox.test(max_heart_rate ~ diagnosis, data = dataset)
+```
+
+```{r wilcoxon_oldpeak}
+
+wilcox.test(oldpeak ~ diagnosis, data = dataset)
+
+```
+
+Resultado (p \< 0.05):
+
+Ambas variables difieren significativamente entre pacientes con y sin enfermedad cardíaca. Los pacientes con enfermedad presentan una frecuencia cardíaca máxima menor. Presentan también valores más altos de *oldpeak*, lo que refleja mayor depresión del ST.
+
+```{r box, echo=FALSE}
+
+ggplot(dataset, aes(x = factor(diagnosis), y = max_heart_rate, fill = factor(diagnosis))) +
+geom_boxplot(alpha = 0.7) +
+scale_fill_manual(values = c("#00BFC4", "#F8766D"), labels = c("Sin enfermedad", "Con enfermedad")) +
+labs(x = "Diagnóstico", y = "Frecuencia cardíaca máxima (bpm)", title = "Distribución de frecuencia cardíaca máxima según diagnóstico") +
+theme_minimal(base_size = 13) +
+theme(legend.position = "none")
+```
+
+Los pacientes sin enfermedad cardíaca (en azul) presentan valores más altos de frecuencia cardíaca máxima, mientras que aquellos con enfermedad (en rosa) alcanzan frecuencias notablemente más bajas. Esto sugiere una menor capacidad funcional del corazón durante el esfuerzo en los individuos enfermos.
+
+```{r boxST, echo=FALSE}
+
+ggplot(dataset, aes(x = factor(diagnosis), y = oldpeak, fill = factor(diagnosis))) +
+geom_boxplot(alpha = 0.7) +
+scale_fill_manual(values = c("#00BFC4", "#F8766D"), labels = c("Sin enfermedad", "Con enfermedad")) +
+labs(x = "Diagnóstico", y = "Oldpeak (ST depression)", title = "Depresión del ST según diagnóstico") +
+theme_minimal(base_size = 13) +
+theme(legend.position = "none")
+```
+
+Los pacientes con enfermedad muestran valores de oldpeak significativamente más elevados, lo que indica una mayor depresión del segmento ST durante la prueba de esfuerzo. La presencia de valores extremos (outliers) refuerza la variabilidad de respuesta en este grupo.
+
+Ambas diferencias fueron estadísticamente significativas según la prueba de Wilcoxon. Esto confirma que tanto la respuesta funcional (*max_heart_rate*) como el marcador electrocardiográfico (*oldpeak*) discriminan adecuadamente entre pacientes sanos y enfermos.
+
+### 2. *Edad* y *max_heart_rate*
+
+La edad es un factor fisiológico clave que podría explicar parte de la variabilidad en el rendimiento cardíaco. Como ambas variables son continuas y no siguen una distribución normal, se aplica la correlación de Spearman.
+
+```{r corr, message=FALSE, warning=FALSE}
+
+cor.test(dataset$age, dataset$max_heart_rate, method = "spearman")
+```
+
+Resultado (p \< 0.05, ρ negativo). Esto quiere decir que existe una correlación negativa significativa, es decir, a mayor edad, menor es la frecuencia cardíaca máxima alcanzada. Este hallazgo refuerza la necesidad de ajustar por edad en el modelo logístico.
+
+```{r geompoint, echo=FALSE}
+
+ggplot(dataset, aes(x = age, y = max_heart_rate, color = factor(diagnosis))) +
+geom_point(alpha = 0.7) +
+labs(x = "Edad", y = "Frecuencia cardíaca máxima",
+color = "Diagnóstico") +
+theme_minimal()
+```
+
+Los resultados de las pruebas de Wilcoxon, Chi-cuadrado y Spearman confirman que todas las variables analizadas están significativamente asociadas con el diagnóstico.
+
+En concreto, las variables de carácter funcional (*max_heart_rate* y *oldpeak*) y sintomático (*chest_pain_type* y *ex_angina*) presentan las diferencias más marcadas entre los grupos.
+
+Estos resultados justifican su inclusión en el modelo de regresión logística múltiple (junto con edad y sexo), con el objetivo de cuantificar su peso relativo en la probabilidad de padecer enfermedad cardíaca.
+
+### 3. Análisis de la variables que más influyen en el modelo, para la posteriori realización de PCA
+
+Se ajustó un modelo de regresión logística binaria para evaluar la influencia conjunta de los principales factores clínicos sobre la probabilidad de presentar enfermedad cardíaca.
+
+Las variables incluidas fueron:
+
+edad, sexo, frecuencia cardíaca máxima (max_heart_rate), depresión del ST (oldpeak), tipo de dolor torácico (chest_pain_type), angina inducida (ex_angina) y glucemia en ayunas (fasting_blood_sugar).
+
+Este modelo integra tanto parámetros clínicos subjetivos y objetivos como medidas fisiológicas, con el fin de identificar qué factores se asocian significativamente con el diagnóstico.
+
+```{r mutate, echo=FALSE}
+
+#Modelo logístico final
+dataset_final <- dataset %>%
+mutate(
+diagnosis = factor(diagnosis, levels = c(0, 1), labels = c("No enfermedad", "Con enfermedad")),
+sex = factor(sex, levels = c(0, 1), labels = c("Mujer", "Hombre"))
+)
+```
+
+```{r glm, message=FALSE, warning=FALSE}
+
+fit_H2 <- glm(diagnosis ~ age + sex + max_heart_rate + oldpeak + chest_pain_type + ex_angina,
+data = dataset_final, family = binomial)
+summary(fit_H2)
+exp(cbind(OR = coef(fit_H2), confint(fit_H2)))
+
+```
+
+Los resultados del modelo logístico muestran que todas las variables consideradas son estadísticamente significativas (p \< 0.05), indicando que contribuyen de forma relevante al diagnóstico.
+
+En concreto:
+
+-   **Edad** (β = 0.03, p = 0.016): el riesgo de enfermedad aumenta ligeramente con la edad.
+
+-   **Sexo (Hombre)** (β = 1.36, p \< 0.001): ser hombre multiplica significativamente la probabilidad de diagnóstico positivo.
+
+-   **Frecuencia cardíaca máxima** (β = -0.012, p = 0.009): los pacientes con enfermedad tienden a alcanzar menores valores de frecuencia cardíaca máxima durante la prueba de esfuerzo.
+
+-   **Depresión del ST (*oldpeak*)** (β = 0.062, p \< 0.001): mayores valores se asocian con isquemia miocárdica.
+
+-   **Tipo de dolor torácico** (β = 0.80, p \< 0.001) y **angina inducida** (β = 1.39, p \< 0.001): ambos factores clínicos incrementan de forma importante la probabilidad de diagnóstico.
+
+-   **Glucemia en ayunas elevada** (β = 0.59, p = 0.044): aunque con menor peso, también se asocia con mayor riesgo cardiovascular.
+
+El modelo presenta una reducción notable de la desviación (de 914.69 a 584.87) y un AIC de 600.87, lo que indica un ajuste adecuado a los datos.
+
+```{r exp, message=FALSE, warning=FALSE}
+
+exp(cbind(OR = coef(fit_H2), confint(fit_H2)))
+pR2(fit_H2)
+or_table <- broom::tidy(fit_H2, conf.int = TRUE, exponentiate = TRUE) %>%
+filter(term != "(Intercept)")
+```
+
+```{r estimate, echo=FALSE, message=FALSE, warning=FALSE}
+
+ggplot(or_table, aes(x = reorder(term, estimate), y = estimate)) +
+geom_point(size = 3, color = "#E69F00") +
+geom_errorbar(aes(ymin = conf.low, ymax = conf.high), width = 0.2, color = "#009E73") +
+geom_hline(yintercept = 1, linetype = "dashed") +
+coord_flip() +
+labs(
+x = "",
+y = "Odds Ratio (IC95%)",
+title = "Factores asociados al diagnóstico de enfermedad cardíaca"
+) +
+theme_minimal(base_size = 13)
+```
+
+Cada punto representa el Odds Ratio (OR) estimado para una variable, y las líneas horizontales su intervalo de confianza al 95% (IC95%).
+
+-   Un OR \> 1 → la variable aumenta la probabilidad de enfermedad cardíaca.
+
+-   Un OR \< 1 → la variable disminuye la probabilidad (efecto protector).
+
+-   Si el IC95% cruza la línea vertical en OR = 1, el efecto no es estadísticamente significativo.
+
+En el gráfico se observa que:
+
+-   ex_angina, sex (hombre) y chest_pain_type tienen efectos claramente positivos y significativos, aumentando la probabilidad de diagnóstico.
+
+-   max_heart_rate muestra un efecto negativo, coherente con el hecho de que una menor frecuencia cardíaca máxima se asocia con peor función cardíaca.
+
+-   oldpeak también suele tener un OR \> 1, aunque el efecto puede variar según el modelo.
+
+-   fasting_blood_sugar y age parecen menos determinantes (probablemente con intervalos amplios o solapados con 1).
+
+### 4. PCA
+
+Con el fin de explorar si las variables clínicas y funcionales permiten diferenciar de forma conjunta a los pacientes con y sin enfermedad cardíaca, se aplicó un Análisis de Componentes Principales (PCA).
+
+Esta técnica multivariante permite resumir la información contenida en múltiples variables correlacionadas en un número reducido de componentes que capturan la mayor parte de la variabilidad total del conjunto de datos.
+
+El objetivo es comprobar si los pacientes de ambos grupos tienden a agruparse o separarse visualmente en el espacio definido por los dos primeros componentes principales, lo que indicaría que existen patrones conjuntos en los factores clínicos que diferencian a ambos grupos.
+
+```{r pca, message=FALSE, warning=FALSE}
+
+#PCA sobre variables más significativas del modelo logístico. Selección de variables con mayor peso según el modelo logístico
+vars_signif <- dataset_final %>%
+select(ex_angina, chest_pain_type, sex, oldpeak, max_heart_rate, age, fasting_blood_sugar) %>%
+mutate(across(everything(), as.numeric))
+#PCA de las variables significativas
+pca_signif <- prcomp(scale(vars_signif), center = TRUE, scale. = TRUE)
+summary(pca_signif)
+#Añadir primer componente al dataset
+dataset_final$PC1_signif <- pca_signif$x[, 1]
+```
+
+```{r vis_PCA, echo=FALSE, message=FALSE, warning=FALSE}
+
+autoplot(pca_signif, data = dataset_final, colour = 'diagnosis',
+loadings = TRUE, loadings.label = TRUE,
+loadings.label.size = 3,
+main = "PCA de variables más significativas según el modelo logístico")
+
+```
+
+En este gráfico se representa el análisis de componentes principales (PCA) aplicado a las variables con mayor peso predictivo en el modelo logístico.
+
+Los dos primeros componentes explican conjuntamente el 47% de la variabilidad total (PC1 = 31.35%, PC2 = 15.78%).
+
+El primer componente (PC1) agrupa las variables asociadas al rendimiento cardíaco durante el esfuerzo (*max_heart_rate*, *oldpeak*, *chest_pain_type*, *ex_angina*), mientras que el segundo (PC2) está más relacionado con factores metabólicos y demográficos (*edad* y *fasting_blood_sugar*).
+
+Se observa una ligera separación entre pacientes con y sin enfermedad cardíaca a lo largo del eje PC1, lo que confirma que los indicadores funcionales de esfuerzo son los que más contribuyen a distinguir ambos grupos.
+
+```{r fit_pca, message=FALSE, warning=FALSE}
+
+#Modelo predictivo usando el primer componente del PCA
+fit_pca <- glm(diagnosis ~ PC1_signif + age + sex, data = dataset_final, family = binomial)
+summary(fit_pca)
+```
+
+```{r roc, echo=FALSE, message=FALSE, warning=FALSE}
+
+#Evaluación del modelo
+pR2(fit_pca)
+roc_pca <- roc(dataset_final$diagnosis, fitted(fit_pca))
+auc(roc_pca)
+
+# Gráfico ROC estilizado
+plot(roc_pca, 
+     col = "#E41A1C", 
+     lwd = 3,
+     main = "Curva ROC - Modelo basado en PCA",
+     cex.main = 1.3,
+     cex.axis = 1.1,
+     cex.lab = 1.2,
+     font.main = 2)
+
+# Añadir línea diagonal de referencia
+abline(a = 0, b = 1, lty = 2, col = "gray40", lwd = 2)
+
+# Mostrar valor de AUC en el gráfico
+text(0.6, 0.2, paste("AUC =", round(auc(roc_pca), 3)),
+     cex = 1.2, col = "#E41A1C", font = 2)
+```
+
+Se ajustó un modelo logístico utilizando el primer componente principal (PC1) obtenido del análisis de componentes principales, junto con las variables demográficas *edad* y *sexo*.
+
+Este modelo tiene como objetivo evaluar si el componente principal —que resume la información de las variables clínicas más significativas— mantiene un buen poder predictivo sobre el diagnóstico.
+
+Los resultados muestran un AUC = 0.8688, valores comparables al modelo logístico completo.
+
+Esto indica que la mayor parte de la variabilidad asociada al diagnóstico puede explicarse mediante un único componente funcional (PC1), lo que refuerza la validez del PCA como herramienta de reducción de dimensionalidad en este contexto clínico.
+
+```{r prob_pred, echo=FALSE, message=FALSE, warning=FALSE}
+
+#Gráfico de probabilidad predicha
+new_data <- data.frame(
+PC1_signif = seq(min(dataset_final$PC1_signif), max(dataset_final$PC1_signif), length.out = 100),
+age = mean(dataset_final$age),
+sex = "Hombre"
+)
+
+new_data$pred <- predict(fit_pca, newdata = new_data, type = "response")
+
+
+ggplot(new_data, aes(x = PC1_signif, y = pred)) +
+geom_line(color = "#E41A1C", size = 1.2) +
+labs(title = "Probabilidad predicha de enfermedad cardíaca según PCA",
+x = "Primer componente principal (PC1)",
+y = "Probabilidad de diagnóstico positivo") +
+theme_minimal(base_size = 13)
+```
+
+En este gráfico se representa la probabilidad predicha de diagnóstico positivo de enfermedad cardíaca en función del primer componente principal (PC1), manteniendo constantes la edad y el sexo.
+
+Se observa una curva sigmoide característica de la regresión logística, donde los valores bajos de PC1 se asocian con una baja probabilidad de enfermedad, mientras que valores altos de PC1 incrementan progresivamente dicha probabilidad hasta acercarse a 1.
+
+Este comportamiento refleja que el PC1 integra de forma coherente la información de las variables clínicas más relevantes (angina inducida, tipo de dolor torácico, *oldpeak*, etc.), generando un índice sintético de riesgo.
+
+En términos clínicos, la gráfica sugiere que a medida que aumenta la combinación de factores adversos representados por el PC1, la probabilidad de diagnóstico positivo crece de manera no lineal, confirmando el valor predictivo del componente principal.
+
+## Hipótesis 3: Modelo K-Means
+
+La tercera hipótesis plantea que los pacientes pueden agruparse en grupos con características clínicas similares, que reflejen distintos perfiles de riesgo cardiovascular o manifestaciones del cuadro cardíaco que a simple vista puedan pasar desapercibidas.
+
+Emplear K-Means con este dataset tiene especial interés, pues algunos pacientes sin diagnostico positivo pueden presentar patrones fisiológicos similares a los enfermos, lo que podría sugerir riesgo clínico. También puede mostrar grados de severidad según las combinaciones de variables.
+
+Por tanto, el objetivo de este apartado es aplicar el algoritmo K-Means sobre el conjunto de datos estandarizado para identificar grupos homogéneos de pacientes y analizar su relación con el diagnóstico.
+
+```{r cargardatos_parapython, echo=FALSE, message=FALSE, warning=FALSE, results='hide'}
+
+dataset_python <- read.csv("heart_disease_db.csv", sep = ";", stringsAsFactors = FALSE)
+
+dataset_python %>% select(where(~!is.numeric(.))) %>% glimpse()
+dataset_python <- dataset_python %>% select(-major_vessels, -thal)
+
+cols_to_check <- c("slope", "max_heart_rate", "resting_blood_pressure",
+"cholesterol", "fasting_blood_sugar",
+"resting_ecg_results", "ex_angina", "oldpeak")
+
+dataset_python <- dataset_python %>%
+mutate(across(all_of(cols_to_check), as.numeric)) %>%
+filter(!is.na(slope),
+!is.na(max_heart_rate),
+!is.na(resting_blood_pressure),
+!is.na(cholesterol),
+!is.na(fasting_blood_sugar),
+!is.na(resting_ecg_results),
+!is.na(ex_angina),
+!is.na(oldpeak))
+
+dataset_python <- dataset_python %>% filter(cholesterol != 0)
+
+normalize <- function(x) (x - min(x)) / (max(x) - min(x))
+dataset_python_scaled <- as.data.frame(lapply(dataset_python, normalize))
+```
+
+```{r kmeans, message=FALSE, warning=FALSE}
+
+range_n_clusters <- 2:20
+silhouette_scores <- c()
+
+for (i in range_n_clusters) {
+set.seed(10)
+km <- kmeans(dataset_python_scaled, centers = i, nstart = 25)
+ss <- silhouette(km$cluster, dist(dataset_python_scaled))
+mean_sil <- mean(ss[, 3])
+silhouette_scores <- c(silhouette_scores, mean_sil)
+}
+```
+
+```{r graficokmeans, echo=FALSE, message=FALSE, warning=FALSE}
+
+df_sil <- data.frame(Clusters = range_n_clusters, Silhouette = silhouette_scores)
+ggplot(df_sil, aes(x = Clusters, y = Silhouette)) +
+geom_line(linetype = "dashed") +
+geom_point(size = 2) +
+theme_minimal() +
+labs(title = "Método de la Silueta para K-Means",
+x = "Número de Clusters (k)",
+y = "Puntuación Promedio de Silueta")
+```
+
+```{r koptimo}
+
+k_optimo <- range_n_clusters[which.max(silhouette_scores)]
+cat("\nEl número óptimo de clusters según el coeficiente de Silueta es:", k_optimo, "\n")
+```
+
+```{r kmeansaplicado_pca, message=FALSE, warning=FALSE}
+
+library(ClusterR)
+set.seed(10)
+km <- KMeans_rcpp(dataset_python_scaled, clusters = k_optimo, num_init = 10, initializer = 'kmeans++')
+labels <- km$cluster
+
+pca_res <- prcomp(dataset_python_scaled, scale. = TRUE)
+pca_df <- data.frame(pca_res$x[, 1:2], Cluster = as.factor(labels))
+colnames(pca_df)[1:2] <- c("PC1", "PC2")
+```
+
+```{r pca_vis, echo=FALSE, message=FALSE, warning=FALSE}
+
+library(ggplot2)
+library(viridis)
+
+ggplot(pca_df, aes(x = PC1, y = PC2, color = as.factor(Cluster))) +
+  geom_point(size = 3, alpha = 0.8) +
+  scale_color_viridis_d(option = "turbo") +
+  theme_minimal() +
+  labs(title = "Distribución de los Clusters en   el espacio PCA",
+  x = paste0("PC1 (", round(summary(pca_res)$importance[2, 1]*100, 1), "%)"),
+y = paste0("PC2 (", round(summary(pca_res)$importance[2, 2]*100, 1), "%)"))
+
+```
+
+Esta figura muestra la proyección bidimensional de nuestro dataset, donde los ejes PC1 y PC2 son los dos componentes principales que capturan la mayor parte de la varianza (en este caso, \~37% en total).
+
+El PCA reduce la dimensionalidad del dataset, permitiendo visualizar cómo se distribuyen los pacientes según su similitud global en las variables originales.
+
+Se observa que los pacientes se agrupan formando varios subgrupos claramente diferenciados, lo que sugiere la existencia de perfiles clínicos homogéneos dentro de la muestra.
+
+Algunos clusters presentan fronteras definidas, mientras que otros se solapan parcialmente, lo que refleja la complejidad y continuidad de los patrones fisiológicos asociados a la enfermedad cardíaca.
+
+```{r cluster, echo=FALSE, message=FALSE, warning=FALSE}
+
+df_cluster <- cbind(dataset_python_scaled, Cluster = as.factor(labels))
+
+ggplot(df_cluster, aes(x = Cluster, fill = as.factor(diagnosis))) +
+geom_bar(position = "dodge", color = "black", alpha = 0.8) +
+scale_fill_brewer(palette = "Pastel1") +
+theme_minimal() +
+labs(title = "Distribución del diagnóstico por cluster",
+x = "Cluster",
+y = "Número de pacientes",
+fill = "Diagnóstico") +
+theme(plot.title = element_text(hjust = 0.5))
+
+```
+
+En esta figura, se representa la proporción de diagnóstico en cada cluster.
+
+Se observa que los primeros clusters (1–3) presentan una mayor concentración de pacientes sin enfermedad cardíaca, mientras que en los clusters intermedios y finales (5–10) aumenta progresivamente la proporción de casos con diagnóstico positivo.
+
+Esto indica que el algoritmo K-Means ha conseguido agrupar a los pacientes de acuerdo con su grado de afectación cardiovascular, incluso sin haber incluido el diagnóstico en el proceso de agrupamiento.
+
+En conjunto, ambas figuras permiten concluir que:
+
+-   Existen diferentes perfiles clínicos dentro de la muestra, reflejados en la estructura de los clusters.
+
+-   Los grupos con predominio de pacientes sanos tienden a concentrarse en regiones del PCA caracterizadas por valores más altos de *frecuencia cardíaca máxima* y menores de *oldpeak*, mientras que los clusters con más enfermos muestran el patrón opuesto.
+
+-   Esto sugiere que el modelo de clustering es capaz de distinguir patrones de riesgo cardiovascular de forma no supervisada, confirmando la hipótesis planteada.
+
+Al comparar las dos imágenes se puede observar que los clusters situados en la zona derecha e inferior del gráfico corresponden a pacientes con valores más bajos de frecuencia cardíaca máxima y valores más altos de oldpeak, variables típicamente asociadas a algún tipo de enfermedad cardíaca, lo cual coincide con que sean pertenecientes al grupo 5 el cual presenta mayor número de enfermos. En cambio, los clusters del lado izquierdo o superior presentan características opuestas (mayor rendimiento cardíaco y menor depresión del ST), más coherentes con pacientes sin enfermedad.
